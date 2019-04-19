@@ -1,5 +1,7 @@
 # open_eye_tracking_remote
 
+![Image of EyeTracker](https://github.com/Mr0Inka/open_eye_tracking_remote/blob/master/test_7.JPG?raw=true)
+
 Dependencies:
 - OpenCV (https://www.deciphertechnic.com/install-opencv-python-on-raspberry-pi/)
 - dlib (pip install dlib / For Windows, use Anaconda or MiniConda)
