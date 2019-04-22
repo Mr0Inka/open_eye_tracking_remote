@@ -33,8 +33,8 @@ triggerR = 0    #Internal variable holding the right eye trigger frame count
 
 faceless = 0    #Internal variable holding the "face missing" frame count befor full calibration
 
-lWidth = 0
-rWidth = 0
+lWidth = 0    #Internal variable holding the left eye width to detect head angle
+rWidth = 0    #Internal variable holding the right eye width to detect head angle
 
 cap = cv2.VideoCapture(0)    #Use camera input on USB #0
 #cap = cv2.VideoCapture("follow2.mp4")    #Use video file from disk
