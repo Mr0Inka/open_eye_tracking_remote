@@ -33,14 +33,15 @@ triggerR = 0    #Internal variable holding the right eye trigger frame count
 
 faceless = 0    #Internal variable holding the "face missing" frame count befor full calibration
 
-lWidth = 0    #Internal variable holding the left eye width to detect head angle
-rWidth = 0    #Internal variable holding the right eye width to detect head angle
+lWidth = 0
+rWidth = 0
 
 cap = cv2.VideoCapture(0)    #Use camera input on USB #0
 #cap = cv2.VideoCapture("follow2.mp4")    #Use video file from disk
 
 detector = dlib.get_frontal_face_detector()
-predictor = dlib.shape_predictor("shape_predictor_68_face_landmarks.dat")
+predictor = dlib.shape_predictor("shape_predictor_5_face_landmarks.dat")
+#predictor = dlib.shape_predictor("shape_predictor_68_face_landmarks.dat")
 font = cv2.FONT_HERSHEY_PLAIN
 
 def midpoint(p1 ,p2):    #Gets the eye bounding box middle point
@@ -218,8 +219,10 @@ while True:
         for face in faces:
             leftRoi = 0
             landmarks = predictor(gray, face)
-            leftRoi = getRoi([36, 39], landmarks)
-            rightRoi = getRoi([42,45], landmarks)
+            #leftRoi = getRoi([36, 39], landmarks)    #36,39 for 68-Point landmarks
+            #rightRoi = getRoi([42,45], landmarks)    #42,45 for 68-Point landmarks
+            leftRoi = getRoi([1,0], landmarks)     #2,3 for 5-point landmarks
+            rightRoi = getRoi([2,3], landmarks)    #1,3 for 5-point landmarks
     
         if faceCount != 0:
             oneX, oneY = leftRoi[0]
