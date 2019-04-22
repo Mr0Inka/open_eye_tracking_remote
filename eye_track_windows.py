@@ -2,7 +2,7 @@ import cv2
 import numpy as np
 import dlib
 from math import hypot
-#from playsound import playsound
+from playsound import playsound
 
 totalWidth = 640    #Image Width
 totalHeight = 480    #Image Height
@@ -16,7 +16,7 @@ faceTimer = 30    #Perform full re-calibration after 30 frames without a face
 
 autoCorrect = True    #Toggle the use of automatic threshold correction
 
-threshHigh = 20    #Automatically correct threshold towards this value
+threshHigh = 30    #Automatically correct threshold towards this value
 leftCalib = False    #Internal variable for the left eye (full) calibration status
 rightCalib = False    #Internal variable for the right eye (full) calibration status
 
@@ -32,6 +32,9 @@ triggerL = 0    #Internal variable holding the left eye trigger frame count
 triggerR = 0    #Internal variable holding the right eye trigger frame count
 
 faceless = 0    #Internal variable holding the "face missing" frame count befor full calibration
+
+lWidth = 0
+rWidth = 0
 
 cap = cv2.VideoCapture(0)    #Use camera input on USB #0
 #cap = cv2.VideoCapture("follow2.mp4")    #Use video file from disk
@@ -72,6 +75,15 @@ def getRate(box, thresh):    #Get the current viewpoint angle
     _, contours, _ = cv2.findContours(threshold, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
     contours = sorted(contours, key=lambda x: cv2.contourArea(x), reverse=True)
     
+    print(str(cols) + " | " + box[4])
+
+    global lWidth
+    global rWidth
+
+    if box[4] == "right":
+        rWidth = cols
+    elif box[4] == "left":
+        lWidth = cols
 
     for cnt in contours:
         (x, y, w, h) = cv2.boundingRect(cnt)
@@ -85,10 +97,10 @@ def getRate(box, thresh):    #Get the current viewpoint angle
         angle = (leftright / (cols / 100))
         
         if leftCalib and rightCalib:
-        	if autoCorrect:
-        	    correct(box[4], int(w / (cols / 100)))
+            if autoCorrect:
+                correct(box[4], int(w / (cols / 100)), int(h / (cols / 100)))
         else:
-        	fullCalib(box[4], (w / (cols / 100)))
+            fullCalib(box[4], (w / (cols / 100)))
         
 
         cv2.rectangle(roi, (x, y), (x + w, y + h), (255, 0, 255), 1)
@@ -108,13 +120,15 @@ def getRate(box, thresh):    #Get the current viewpoint angle
     global thresh_l
 
     if box[4] == "right":
-    	thresh_r = thresh_r + 1
+        thresh_r = thresh_r + 1
     elif box[4] == "left":
-    	thresh_l = thresh_l + 1
+        thresh_l = thresh_l + 1
 
-def correct(eye, value):    #Auto correct towards the threshHigh value
+def correct(eye, value, valueH):    #Auto correct towards the threshHigh value
     global thresh_r
     global thresh_l
+
+    #print(str(valueH) + " | " + str(value))
 
     if eye == "right":
         if value > threshHigh:
@@ -123,7 +137,6 @@ def correct(eye, value):    #Auto correct towards the threshHigh value
             thresh_r = thresh_r + 1
 
     elif eye == "left":
-        print(str(value) + " | " + str(thresh_r))
         if value > threshHigh:
             thresh_l = thresh_l - 1
         elif value < threshHigh:
@@ -151,163 +164,190 @@ def fullCalib(eye, value):    #Perform one step towards thefull calibration
         if value >= threshHigh:
             thresh_r = thresh_r - 3
         else:
-        	global rightCalib
-        	rightCalib = True
-        	print("RIGHT CALIBRATED")
+            global rightCalib
+            rightCalib = True
+            print("RIGHT CALIBRATED")
     elif eye == "left":
         if value >= threshHigh:
             thresh_l = thresh_l - 3
         else:
-        	global leftCalib
-        	leftCalib = True
-        	print("LEFT CALIBRATED")
+            global leftCalib
+            leftCalib = True
+            print("LEFT CALIBRATED")
 
+
+def getWDiff():
+    if rWidth > lWidth:
+        return lWidth / (rWidth / 100)
+    elif lWidth > rWidth:
+        return rWidth / (lWidth / 100)
+    else:
+        return 100
 
 while True:
-    ret, frame = cap.read()
-    if ret is False:
-        break
-
-    if firstRun:
-        firstRun = False
-        init()
-
-    small = rescale_img(frame, percent=500)
-    gray = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
-
-    faces = detector(gray)
-
-    cv2.imshow("Frame", frame)
-
-    faceCount = len(faces)
-
-    if faceCount == 0:
-    	faceless = faceless + 1
-    else:
-    	faceless = 0
-
-    # if faceless == faceTimer:    #Perform full calibration after not having a face for X frames
-    # 	leftCalib = False
-    # 	rightCalib = False
-    # 	thresh_l = 100
-    # 	thresh_r = 100
-    # 	print("Recalibrating")
-
-    for face in faces:
-        leftRoi = 0
-        landmarks = predictor(gray, face)
-        leftRoi = getRoi([36, 39], landmarks)
-        rightRoi = getRoi([42,45], landmarks)
-
-    if faceCount != 0:
-        oneX, oneY = leftRoi[0]
-        twoX, twoY = leftRoi[1]
+    try:
+        ret, frame = cap.read()
+        if ret is False:
+            break
     
-        oneX = oneX * divider
-        twoX = twoX * divider
-        oneY = oneY * divider
-        twoY = twoY * divider
+        if firstRun:
+            firstRun = False
+            init()
     
-        leftRate = getRate([oneX, twoX, oneY, twoY, "left"], thresh_l)
+        small = rescale_img(frame, percent=500)
+        gray = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
     
-        oneX, oneY = rightRoi[0]
-        twoX, twoY = rightRoi[1]
+        faces = detector(gray)
     
-        oneX = oneX * divider
-        twoX = twoX * divider
-        oneY = oneY * divider
-        twoY = twoY * divider
-        
-        rightRate = getRate([oneX, twoX, oneY, twoY, "right"], thresh_r)
-    
-        currentRate = 50
-        
-        if leftRate is not None and rightRate is not None and faceCount == 1:
-            currentRate = (leftRate + rightRate) / 2
-            #print("AVG : " + str(currentRate))
-        
-        elif leftRate is not None and rightRate is None and faceCount == 1:
-            #print("Left : " + str(leftRate))
-            currentRate = leftRate
-        
-        elif leftRate is None and rightRate is not None and faceCount == 1:
-            #print("Right : " + str(rightRate))
-            currentRate = rightRate
-        else:
-            cv2.rectangle(frame,(int(totalWidth * 0.01), int(totalHeight * 0.01)),(int(totalWidth * 0.99), int(totalHeight * 0.99)),(0,0,255),30)
-            cv2.line(frame, (int(totalWidth * highLimit), 0), (int(totalWidth * highLimit), totalHeight) , (0, 0,255), 15)
-            cv2.line(frame, (int(totalWidth * lowLimit), 0), (int(totalWidth * lowLimit), totalHeight) , (0, 0,255), 15)
-    
-        if currentRate > highLimit:
-            cv2.line(frame, (int(totalWidth * highLimit), 0), (int(totalWidth * highLimit), totalHeight) , (0, 0,255), 15)
-            triggerL += 1
-            triggerR = 0
-            if triggerL == triggerLim:
-                print("LEFT Triggered")
-                cv2.putText(frame, "> LEFT", (30, int(totalHeight * 0.8)), font, 10, (0, 255, 0), 10)
-                cv2.rectangle(frame,(int(totalWidth * 0.01), int(totalHeight * 0.01)),(int(totalWidth * 0.99), int(totalHeight * 0.99)),(0,255,0),30)
-                #playsound('clickOn.mp3')
-
-        elif currentRate < lowLimit:
-            cv2.line(frame, (int(totalWidth * lowLimit), 0), (int(totalWidth * lowLimit), totalHeight) , (0, 0,255), 15)
-            triggerR += 1
-            triggerL = 0
-            if triggerR == triggerLim:
-                print("RIGHT Triggered")
-                cv2.putText(frame, "> RIGHT", (30, int(totalHeight * 0.8)), font, 10, (0, 255, 0), 10)
-                cv2.rectangle(frame,(int(totalWidth * 0.01), int(totalHeight * 0.01)),(int(totalWidth * 0.99), int(totalHeight * 0.99)),(0,255,0),30)
-                #playsound('clickOff.mp3')
-        else: 
-            triggerL = 0
-            triggerR = 0
-
-        if leftCalib == False and rightCalib == False:
-        	cv2.putText(frame, "Calibrating...", (30, int(totalHeight * 0.9)), font, (textSize * 2), (0, 255, 0), 3)
-
-
-        #cv2.line(gray, (int(480 * currentRate), 0), (int(480 * currentRate), 270) , (0, 0,255), 4)
-    
-        cv2.line(frame, (int(totalWidth * lowLimit), 0), (int(totalWidth * lowLimit), totalHeight) , (0, 255,255), 2)
-        cv2.line(frame, (int(totalWidth * highLimit), 0), (int(totalWidth * highLimit), totalHeight) , (0, 255,255), 2)
-    
-        cv2.putText(frame, "Focus position: {:.2f}".format(currentRate), (30, 50), font, textSize, (0, 0, 0), 3)
-        cv2.putText(frame, "Threshhold_L: {}".format(thresh_l), (30, 120), font, textSize, (0, 0, 0), 3)
-        cv2.putText(frame, "Threshhold_R: {}".format(thresh_r), (30, 190), font, textSize, (0, 0, 0), 3)
-        cv2.putText(frame, "Faces: {}".format(faceCount), (30, 260), font, textSize, (0, 0, 0), 3)
-    
-    
-        cv2.line(frame, (0, int(totalHeight * 0.6)), (totalWidth,int(totalHeight * 0.6)) , (0, 0,255), 2)
-        cv2.circle(frame, (int(totalWidth * currentRate), int(totalHeight * 0.6)), 50, (0, 0, 255), 15)
-    
-        #cv2.imshow("Threshold", threshold)
         cv2.imshow("Frame", frame)
-        #cv2.imshow("gray roi", gray_roi)
-        #cv2.imshow("gray", gray)
-        #roi = rescale_frame(roi, percent=500)
-        #cv2.imshow("Roi", roi)
-
-    else:
-        print("No faces")
-
-    key = cv2.waitKey(30)
-    if key == 27:
-        break
-    elif key == 38:
-        print("+1 threshR")
-        thresh_r = thresh_r + 1
-    elif key == 40:
-        print("-1 threshR")
-        thresh_r = thresh_r - 1
-    elif key == 39:
-        print("+1 threshL")
-        thresh_l = thresh_l + 1
-    elif key == 37:
-        print("-1 threshL")
-        thresh_l = thresh_l - 1
-    elif key == 99:
-    	thresh_l = 100
-    	thresh_r = 100
-    	leftCalib = False
-    	rightCalib = False
+    
+        faceCount = len(faces)
+    
+        if faceCount == 0:
+            faceless = faceless + 1
+        else:
+            faceless = 0
+    
+        # if faceless == faceTimer:    #Perform full calibration after not having a face for X frames
+        #     leftCalib = False
+        #     rightCalib = False
+        #     thresh_l = 100
+        #     thresh_r = 100
+        #     print("Recalibrating")
+    
+        for face in faces:
+            leftRoi = 0
+            landmarks = predictor(gray, face)
+            leftRoi = getRoi([36, 39], landmarks)
+            rightRoi = getRoi([42,45], landmarks)
+    
+        if faceCount != 0:
+            oneX, oneY = leftRoi[0]
+            twoX, twoY = leftRoi[1]
+        
+            oneX = oneX * divider
+            twoX = twoX * divider
+            oneY = oneY * divider
+            twoY = twoY * divider
+        
+            leftRate = getRate([oneX, twoX, oneY, twoY, "left"], thresh_l)
+        
+            oneX, oneY = rightRoi[0]
+            twoX, twoY = rightRoi[1]
+        
+            oneX = oneX * divider
+            twoX = twoX * divider
+            oneY = oneY * divider
+            twoY = twoY * divider
+            
+            rightRate = getRate([oneX, twoX, oneY, twoY, "right"], thresh_r)
+        
+            widthDiff = getWDiff()
+    
+            #print(widthDiff)
+    
+            currentRate = 50
+    
+            
+            if leftRate is not None and rightRate is not None and faceCount == 1:
+                currentRate = (leftRate + rightRate) / 2
+                #print("AVG : " + str(currentRate))
+            
+            elif leftRate is not None and rightRate is None and faceCount == 1:
+                #print("Left : " + str(leftRate))
+                currentRate = leftRate
+            
+            elif leftRate is None and rightRate is not None and faceCount == 1:
+                #print("Right : " + str(rightRate))
+                currentRate = rightRate
+            #else:
+            #    cv2.rectangle(frame,(int(totalWidth * 0.01), int(totalHeight * 0.01)),(int(totalWidth * 0.99), int(totalHeight * 0.99)),(0,0,255),30)
+            #    cv2.line(frame, (int(totalWidth * highLimit), 0), (int(totalWidth * highLimit), totalHeight) , (0, 0,255), 15)
+            #    cv2.line(frame, (int(totalWidth * lowLimit), 0), (int(totalWidth * lowLimit), totalHeight) , (0, 0,255), 15)
+      
+    
+            if currentRate > highLimit and int(widthDiff) > 85:
+                cv2.line(frame, (int(totalWidth * highLimit), 0), (int(totalWidth * highLimit), totalHeight) , (0, 0,255), 15)
+                triggerL += 1
+                triggerR = 0
+                if triggerL == triggerLim:
+                    print("LEFT Triggered")
+                    cv2.putText(frame, "> LEFT", (30, int(totalHeight * 0.8)), font, 10, (0, 255, 0), 10)
+                    cv2.rectangle(frame,(int(totalWidth * 0.01), int(totalHeight * 0.01)),(int(totalWidth * 0.99), int(totalHeight * 0.99)),(0,255,0),30)
+                    playsound('clickOn.mp3')
+    
+            elif currentRate < lowLimit and int(widthDiff) > 85:
+                cv2.line(frame, (int(totalWidth * lowLimit), 0), (int(totalWidth * lowLimit), totalHeight) , (0, 0,255), 15)
+                triggerR += 1
+                triggerL = 0
+                if triggerR == triggerLim:
+                    print("RIGHT Triggered")
+                    cv2.putText(frame, "> RIGHT", (30, int(totalHeight * 0.8)), font, 10, (0, 255, 0), 10)
+                    cv2.rectangle(frame,(int(totalWidth * 0.01), int(totalHeight * 0.01)),(int(totalWidth * 0.99), int(totalHeight * 0.99)),(0,255,0),30)
+                    playsound('clickOff.mp3')
+            else: 
+                triggerL = 0
+                triggerR = 0
+    
+            if leftCalib == False and rightCalib == False:
+                cv2.putText(frame, "Calibrating...", (30, int(totalHeight * 0.9)), font, (textSize * 2), (0, 255, 0), 3)
+    
+            if widthDiff < 85:
+                cv2.putText(frame, "Turn towards camera!", (30, int(totalHeight * 0.9)), font, (textSize * 1.5), (255, 255, 255), 4)
+                cv2.putText(frame, "Turn towards camera!", (30, int(totalHeight * 0.9)), font, (textSize * 1.5), (0, 0, 255), 3)
+    
+    
+            #cv2.line(gray, (int(480 * currentRate), 0), (int(480 * currentRate), 270) , (0, 0,255), 4)
+        
+            cv2.line(frame, (int(totalWidth * lowLimit), 0), (int(totalWidth * lowLimit), totalHeight) , (0, 255,255), 2)
+            cv2.line(frame, (int(totalWidth * highLimit), 0), (int(totalWidth * highLimit), totalHeight) , (0, 255,255), 2)
+        
+            cv2.putText(frame, "Focus position: {:.2f}".format(currentRate), (30, 50), font, textSize, (0, 0, 0), 3)
+            cv2.putText(frame, "Threshhold_L: {}".format(thresh_l), (30, 120), font, textSize, (0, 0, 0), 3)
+            cv2.putText(frame, "Threshhold_R: {}".format(thresh_r), (30, 190), font, textSize, (0, 0, 0), 3)
+            #cv2.putText(frame, "Faces: {}".format(faceCount), (30, 260), font, textSize, (0, 0, 0), 3)
+            cv2.putText(frame, "Diff: {:.1f} %".format(widthDiff), (30, 260), font, textSize, (0, 0, 0), 3)
+        
+        
+            cv2.line(frame, (0, int(totalHeight * 0.6)), (totalWidth,int(totalHeight * 0.6)) , (0, 0,255), 2)
+            cv2.circle(frame, (int(totalWidth * currentRate), int(totalHeight * 0.6)), 50, (0, 0, 255), 15)
+        
+            #cv2.imshow("Threshold", threshold)
+            cv2.imshow("Frame", frame)
+            #cv2.imshow("gray roi", gray_roi)
+            #cv2.imshow("gray", gray)
+            #roi = rescale_frame(roi, percent=500)
+            #cv2.imshow("Roi", roi)
+    
+        else:
+            print("No faces")
+            cv2.line(frame, (int(totalWidth * lowLimit), 0), (int(totalWidth * lowLimit), totalHeight) , (0, 255,255), 2)
+            cv2.line(frame, (int(totalWidth * highLimit), 0), (int(totalWidth * highLimit), totalHeight) , (0, 255,255), 2)
+            cv2.line(frame, (0, int(totalHeight * 0.6)), (totalWidth,int(totalHeight * 0.6)) , (0, 0,255), 2)
+            cv2.circle(frame, (int(totalWidth * 0.5), int(totalHeight * 0.6)), 50, (0, 0, 255), 15)
+    
+    
+        key = cv2.waitKey(30)
+        if key == 27:
+            break
+        elif key == 38:
+            print("+1 threshR")
+            thresh_r = thresh_r + 1
+        elif key == 40:
+            print("-1 threshR")
+            thresh_r = thresh_r - 1
+        elif key == 39:
+            print("+1 threshL")
+            thresh_l = thresh_l + 1
+        elif key == 37:
+            print("-1 threshL")
+            thresh_l = thresh_l - 1
+        elif key == 99:
+            thresh_l = 100
+            thresh_r = 100
+            leftCalib = False
+            rightCalib = False
+    except:
+        print("Error converting image")
 
 cv2.destroyAllWindows()
