@@ -9,15 +9,15 @@ from picamera import PiCamera
 import time
 
 camera = PiCamera()    #Initiate the rpi camera
-camera.resolution = (1280, 720)    #Base image resolution
+camera.resolution = (640, 480)    #Base image resolution
 camera.framerate = 30    #Base image FPS
-rawCapture = PiRGBArray(camera, size=(1280,720))    #Camera setup and base image resolution
+rawCapture = PiRGBArray(camera, size=(640,480))    #Camera setup and base image resolution
 
 time.sleep(0.1)    #Warm up camera
 
-totalWidth = 1280    #Image Width
-totalHeight = 720    #Image Height
-divider = 6    #Divide full image by X for faster face detection
+totalWidth = 640    #Image Width
+totalHeight = 480    #Image Height
+divider = 2    #Divide full image by X for faster face detection
 
 thresh_r = 80    #Default threshold for detecting the darkest spot on the right eye
 thresh_l = 80    #Default threshold for detecting the darkest spot on the right eye
@@ -27,13 +27,13 @@ faceTimer = 15    #Perform full re-calibration after 30 frames without a face
 
 autoCorrect = True    #Toggle the use of automatic threshold correction
 
-threshHigh = 40    #Automatically correct threshold towards this value
+threshHigh = 25    #Automatically correct threshold towards this value
 leftCalib = False    #Internal variable for the left eye (full) calibration status
 rightCalib = False    #Internal variable for the right eye (full) calibration status
 
 textSize = 2    #Default text size
 
-triggerLim = 3;    #Trigger after X frames over or under the high- and lowLimit
+triggerLim = 5;    #Trigger after X frames over or under the high- and lowLimit
 
 firstRun = True    #Internal variable to identify a first-run
 leftRoi = 0    #Internal variable holding the left eye coordinates
@@ -65,8 +65,8 @@ def getRoi(eye_points, facial_landmarks):    #Get the eye's region of interest
     left_point = (facial_landmarks.part(eye_points[0]).x, facial_landmarks.part(eye_points[0]).y)
     right_point = (facial_landmarks.part(eye_points[1]).x, facial_landmarks.part(eye_points[1]).y)
     eyeWidth = hypot((left_point[0] - right_point[0]), (left_point[1] - right_point[1]))
-    leftTop = (int(facial_landmarks.part(eye_points[0]).x - eyeWidth / 10), int(facial_landmarks.part(eye_points[0]).y - eyeWidth / 4))
-    rightBot = (int(facial_landmarks.part(eye_points[1]).x + eyeWidth / 10), int(facial_landmarks.part(eye_points[1]).y + eyeWidth / 5))
+    leftTop = (int(facial_landmarks.part(eye_points[0]).x), int(facial_landmarks.part(eye_points[0]).y - eyeWidth / 4))
+    rightBot = (int(facial_landmarks.part(eye_points[1]).x), int(facial_landmarks.part(eye_points[1]).y + eyeWidth / 5))
 
     cv2.rectangle(gray,leftTop,rightBot,(0,255,255),1)
 
@@ -103,19 +103,19 @@ def getRate(box, thresh):    #Get the current viewpoint angle
         global rightCalib
 
 
-        angle = (leftright / (cols / 100))
+        angle = (leftright / (float(cols) / 100))
         
         if leftCalib and rightCalib:
             if autoCorrect:
-                correct(box[4], int(w / (cols / 100)), int(h / (cols / 100)))
+                correct(box[4], int(w / (float(cols) / 100)), int(h / (float(cols) / 100)))
         else:
-            fullCalib(box[4], (w / (cols / 100)))
+            fullCalib(box[4], (w / (float(cols) / 100)))
         
 
         cv2.rectangle(roi, (x, y), (x + w, y + h), (255, 0, 255), 1)
         
-        cv2.line(roi, (x + int(w/2), 0), (x + int(w/2), rows), (255, 255,0), 1)
-        cv2.line(roi, (0, y + int(h/2)), (cols, y + int(h/2)), (0, 255,0), 1)
+        cv2.line(roi, (x + int(float(w)/2), 0), (x + int(float(w)/2), rows), (255, 255,0), 1)
+        cv2.line(roi, (0, y + int(float(h)/2)), (cols, y + int(float(h)/2)), (0, 255,0), 1)
 
         cv2.line(roi, (int(cols*0.3), 0), (int(cols*0.3), rows), (255, 255,255), 1)
         cv2.line(roi, (int(cols*0.7), 0), (int(cols*0.7), rows), (255, 255,255), 1)
@@ -123,7 +123,7 @@ def getRate(box, thresh):    #Get the current viewpoint angle
         cv2.imshow(("Eye_" + box[4]), roi)
         cv2.imshow(("Threshold_" + box[4]), threshold)
 
-        return (leftright / (cols / 100)) / 100
+        return (leftright / (float(cols) / 100)) / 100
 
     global thresh_r
     global thresh_l
@@ -187,9 +187,9 @@ def fullCalib(eye, value):    #Perform one step towards thefull calibration
 
 def getWDiff():
     if rWidth > lWidth:
-        return lWidth / (rWidth / 100)
+        return lWidth / (float(rWidth) / 100)
     elif lWidth > rWidth:
-        return rWidth / (lWidth / 100)
+        return rWidth / (float(lWidth) / 100)
     else:
         return 100
 
@@ -283,7 +283,7 @@ for piFrame in camera.capture_continuous(rawCapture, format="bgr", use_video_por
                     print("LEFT Triggered")
                     cv2.putText(frame, "> LEFT", (30, int(totalHeight * 0.8)), font, 10, (0, 255, 0), 10)
                     cv2.rectangle(frame,(int(totalWidth * 0.01), int(totalHeight * 0.01)),(int(totalWidth * 0.99), int(totalHeight * 0.99)),(0,255,0),30)
-                    playsound('clickOn.mp3')
+                    #playsound('clickOn.mp3')
     
             elif currentRate < lowLimit and int(widthDiff) > 85:
                 cv2.line(frame, (int(totalWidth * lowLimit), 0), (int(totalWidth * lowLimit), totalHeight) , (0, 0,255), 15)
@@ -293,7 +293,7 @@ for piFrame in camera.capture_continuous(rawCapture, format="bgr", use_video_por
                     print("RIGHT Triggered")
                     cv2.putText(frame, "> RIGHT", (30, int(totalHeight * 0.8)), font, 10, (0, 255, 0), 10)
                     cv2.rectangle(frame,(int(totalWidth * 0.01), int(totalHeight * 0.01)),(int(totalWidth * 0.99), int(totalHeight * 0.99)),(0,255,0),30)
-                    playsound('clickOff.mp3')
+                    #playsound('clickOff.mp3')
             else: 
                 triggerL = 0
                 triggerR = 0
@@ -361,5 +361,6 @@ for piFrame in camera.capture_continuous(rawCapture, format="bgr", use_video_por
         
     except:
         print("Error converting image")
+        rawCapture.truncate(0)    #Empty the buffer
 
 cv2.destroyAllWindows()
