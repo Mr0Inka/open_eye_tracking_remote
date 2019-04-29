@@ -15,4 +15,4 @@ Dependencies:
 Important notes: 
 - The RPI version is optimized for python2, while the windows version works only with python3 (float calculation)
 - The RPI version currently only works with an RPI camera, not a usb camera
-- Using a NOIR camera with IR blasters should technically enhance the detection quality (needs readjusting in detecting black/white)
+- A NOIR camera with additional IR blasters improves the detection quality by a lot
