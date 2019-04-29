@@ -389,6 +389,6 @@ for piFrame in camera.capture_continuous(rawCapture, format="bgr", use_video_por
         
     except:
         print("Error converting image")
-        rawCapture.truncate(0)    #Empty the buffer
+        rawCapture.truncate(0)    #Empty the buffer on error
 
-cv2.destroyAllWindows()
+cv2.destroyAllWindows()d
