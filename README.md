@@ -1,4 +1,4 @@
-![GazeLogo](https://i.imgur.com/mVVScOQ.png)
+![GazeLogo](https://i.imgur.com/NZCScuh.png)
 
 ![Image of EyeTracker](https://github.com/Mr0Inka/open_eye_tracking_remote/blob/master/test_7.JPG?raw=true)
 
