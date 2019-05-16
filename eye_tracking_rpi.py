@@ -1,4 +1,5 @@
 import time
+import keyboard
 
 import cv2
 import numpy as np
@@ -9,11 +10,18 @@ from playsound import playsound
 from picamera.array import PiRGBArray
 from picamera import PiCamera
 
+import os
 import RPi.GPIO as GPIO
+import requests
+
+import sys
+
+vlcPass = "helloWorld" #The Lua password you set in the VLC Player settings
+vlcIp = "192.168.123.1" #Your PC's ip adress in the local network
+
 GPIO.setmode(GPIO.BCM)
 GPIO.setwarnings(False)
-GPIO.setup(17,GPIO.OUT)
-
+GPIO.setup(21,GPIO.OUT)
 
 camera = PiCamera()    #Initiate the rpi camera
 camera.resolution = (640, 480)    #Base image resolution
@@ -27,6 +35,8 @@ totalWidth = 640    #Image Width
 totalHeight = 480    #Image Height
 divider = 2    #Divide full image by X for faster face detection
 
+shutDownTime = 3 #Shutdown after holding button for X seconds
+
 maxThresh = 130
 minThresh = 0
 
@@ -34,7 +44,7 @@ thresh_r = 80    #Default threshold for detecting the darkest spot on the right 
 thresh_l = 80    #Default threshold for detecting the darkest spot on the right eye
 lowLimit = 0.32    #Lower boundary for triggering
 highLimit = 0.68    #Higher boundary for triggering
-faceTimer = 15    #Perform full re-calibration after 30 frames without a face
+faceTimer = 30    #Perform full re-calibration after 30 frames without a face
 
 autoCorrect = True    #Toggle the use of automatic threshold correction
 
@@ -52,13 +62,222 @@ rightRoi = 0    #Internal variable holding the right eye coordinates
 
 triggerL = 0    #Internal variable holding the left eye trigger frame count
 triggerR = 0    #Internal variable holding the right eye trigger frame count
+triggerV = 0
 
 faceless = 0    #Internal variable holding the "face missing" frame count befor full calibration
+
+pause = False
 
 lWidth = 0
 rWidth = 0
 
-playCalib = True;
+vertRateL = 50;
+vertRateR = 50;
+
+keyboardCheck = 0;
+
+nofacemode = True
+
+playCalib = True
+
+mode = "channel"
+
+currentVolume = 125
+
+buttonHold = 0 #Timestamp for when the button was pressed
+buttonState = 0 #Current status of the button
+shuttingDown = 0 #Are we shutting down already?
+
+GPIO.setup(4, GPIO.IN) #Capacitive Button bin
+GPIO.add_event_detect(4, GPIO.BOTH) #Capacitive Button interrupt
+
+def key_press(key):
+    print key.name
+    global lowLimit
+    global highLimit
+    #print event.Ascii
+    if key.name == "z":
+        print "> SenseUp"
+        lowLimit += 0.02
+        highLimit -= 0.02
+        print "Limits: " + str(lowLimit) + "/" + str(highLimit)
+        try:
+            requests.get("http://" + vlcIp + ":3000/notify/?message=sense_" + str(lowLimit) + "-" + str(highLimit), timeout=0.1)
+        except: 
+            print("Sense Request Failed!")
+    elif key.name == "t":
+        print "> SenseDown"
+        lowLimit -= 0.02
+        highLimit += 0.02
+        print "Limits: " + str(lowLimit) + "/" + str(highLimit)
+        try:
+            requests.get("http://" + vlcIp + ":3000/notify/?message=sense_" + str(lowLimit) + "-" + str(highLimit), timeout=0.1)
+        except: 
+            print("Sense Request Failed!")
+    elif key.name == "w":
+        print "> Up"
+        lowLimit = 0.32    #Lower boundary for triggering
+        highLimit = 0.68 
+        print "Limits: " + str(lowLimit) + "/" + str(highLimit)
+        try:
+            requests.get("http://" + vlcIp + ":3000/notify/?message=sense_" + str(lowLimit) + "-" + str(highLimit), timeout=0.1)
+        except: 
+            print("Sense Request Failed!")
+    elif key.name == "s":
+        print "> Down"
+        modeTrigger()
+    elif key.name == "a":
+        print "> Left"
+        lTrigger()
+    elif key.name == "d":
+        print "> Right"
+        rTrigger()
+
+def on_error(error):
+    print error
+
+def modeTrigger():
+    global mode
+    GPIO.output(21, GPIO.HIGH)
+    time.sleep(0.1)
+    GPIO.output(21, GPIO.LOW)
+    time.sleep(0.1)
+    GPIO.output(21, GPIO.HIGH)
+    time.sleep(0.1)
+    GPIO.output(21, GPIO.LOW)
+    time.sleep(0.1)
+    GPIO.output(21, GPIO.HIGH)
+    time.sleep(0.1)
+    GPIO.output(21, GPIO.LOW)
+    if mode == "channel":
+        mode = "volume"
+        try:
+            requests.get("http://" + vlcIp + ":3000/notify/?message=mode_volume", timeout=0.1)
+        except: 
+            print("Notify Request Failed!")
+    elif mode == "volume":
+        mode = "channel"
+        try:
+            requests.get("http://" + vlcIp + ":3000/notify/?message=mode_channel", timeout=0.1)
+        except: 
+            print("Notify Request Failed!")
+    print(" > Mode = " + mode)
+
+def lTrigger():
+    global currentVolume
+    print("LEFT Triggered")
+    GPIO.output(21, GPIO.HIGH)
+    time.sleep(0.1)
+    GPIO.output(21, GPIO.LOW)
+    if mode == "channel":
+        try:
+            requests.get("http://" + vlcPass + "@" + vlcIp + ":8080/requests/status.xml?command=pl_previous", timeout=0.1)
+        except:
+            print("VLC Request Failed!")
+                        
+        try:
+            requests.get("http://" + vlcIp + ":3000/notify/?message=ChannelDown", timeout=0.1)
+        except: 
+            print("Notify Request Failed!")
+                            
+    elif mode == "volume":
+        currentVolume -= 25
+        if currentVolume < 0:
+            currentVolume = 0
+        print("Current volume: " + str(currentVolume))
+        try:
+            requests.get("http://" + vlcPass + "@" + vlcIp + ":8080/requests/status.xml?command=volume&val=" + str(currentVolume), timeout=0.1)
+        except:
+            print("VLC Request Failed!")
+                        
+        try:
+            requests.get("http://" + vlcIp + ":3000/notify/?message=Volume_" + str(currentVolume), timeout=0.1)
+        except: 
+            print("Notify Request Failed!")
+            
+def rTrigger():
+    global currentVolume
+    print("Right Triggered")
+    GPIO.output(21, GPIO.HIGH)
+    time.sleep(0.1)
+    GPIO.output(21, GPIO.LOW)
+    time.sleep(0.1)
+    GPIO.output(21, GPIO.HIGH)
+    time.sleep(0.1)
+    GPIO.output(21, GPIO.LOW)
+    if mode == "channel":
+        try:
+            requests.get("http://" + vlcPass + "@" + vlcIp + ":8080/requests/status.xml?command=pl_next", timeout=0.1)
+        except:
+            print("VLC Request Failed!")
+                        
+        try:
+            requests.get("http://" + vlcIp + ":3000/notify/?message=ChannelUp", timeout=0.1)
+        except: 
+            print("Notify Request Failed!")
+                            
+    elif mode == "volume":
+        currentVolume += 25
+        if currentVolume >= 249:
+            currentVolume = 255 
+        print("Current volume: " + str(currentVolume))
+        try:
+            requests.get("http://" + vlcPass + "@" + vlcIp + ":8080/requests/status.xml?command=volume&val=" + str(currentVolume), timeout=0.1)
+        except:
+            print("VLC Request Failed!")
+                        
+        try:
+            requests.get("http://" + vlcIp + ":3000/notify/?message=Volume_" + str(currentVolume), timeout=0.1)
+        except: 
+            print("Notify Request Failed!")
+
+def triggered(arg): #Capacitive button callback
+    global keyboard
+    global buttonHold
+    global buttonState
+    global pause
+    buttonState = GPIO.input(4)
+    if buttonState:
+        #print("Pressed")
+        buttonHold = time.time()
+    else:
+        releaseTime = time.time() - buttonHold
+        #print("Released after " + str(releaseTime))
+        if releaseTime < shutDownTime:
+            if not pause:
+                print("Paused!")
+                try:
+                    requests.get("http://" + vlcIp + ":3000/notify/?message=paused", timeout=0.1)
+                except:
+                    print("Pause Request Failed!")
+                GPIO.output(21, GPIO.HIGH)
+                time.sleep(0.3)
+                GPIO.output(21, GPIO.LOW)
+                time.sleep(0.5)
+                pause = not pause
+            else: 
+                print("Resumed!")
+                keyboard.on_press(key_press)
+                try:
+                    requests.get("http://" + vlcIp + ":3000/notify/?message=resumed", timeout=0.1)
+                except:
+                    print("Pause Request Failed!")
+                GPIO.output(21, GPIO.HIGH)
+                time.sleep(0.1)
+                GPIO.output(21, GPIO.LOW)
+                time.sleep(0.1)                
+                GPIO.output(21, GPIO.HIGH)
+                time.sleep(0.1)
+                GPIO.output(21, GPIO.LOW)
+                time.sleep(0.1)
+                GPIO.output(21, GPIO.HIGH)
+                time.sleep(0.1)
+                GPIO.output(21, GPIO.LOW)
+                time.sleep(0.5)
+                pause = not pause
+                
+GPIO.add_event_callback(4, triggered) #Capacitive button add callback
+
 
 detector = dlib.get_frontal_face_detector()
 predictor = dlib.shape_predictor("shape_predictor_5_face_landmarks.dat")
@@ -97,7 +316,7 @@ def getRate(box, thresh):    #Get the current viewpoint angle
     _, contours, _ = cv2.findContours(threshold, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
     contours = sorted(contours, key=lambda x: cv2.contourArea(x), reverse=True)
     
-    print(str(cols) + " | " + box[4])
+    #print(str(cols) + " | " + box[4]) //Display current eye difference
 
     global lWidth
     global rWidth
@@ -111,10 +330,20 @@ def getRate(box, thresh):    #Get the current viewpoint angle
         (x, y, w, h) = cv2.boundingRect(cnt)
     
         leftright = x + int(w/2)
+        vert = y + int(h/2)
+        #print(box[4] + str(rows))
+        vertAngle = (vert / (float(rows) / 100))
 
         global leftCalib
         global rightCalib
 
+        global vertRateL
+        global vertRateR
+
+        if box[4] == "right":
+            vertRateR = vertAngle
+        elif box[4] == "left":
+            vertRateL = vertAngle
 
         angle = (leftright / (float(cols) / 100))
         
@@ -209,18 +438,39 @@ def getWDiff():
 for piFrame in camera.capture_continuous(rawCapture, format="bgr", use_video_port=True):
     try:
         frame = piFrame.array
+        
+        #sys.stdout.write(frame.tostring())
     
         if firstRun:
             firstRun = False
             #init()
+           
+        if buttonState and time.time() > (buttonHold + shutDownTime) and not shuttingDown:
+            shuttingDown = 1
+            GPIO.output(21, GPIO.HIGH)
+            time.sleep(1)
+            GPIO.output(21, GPIO.LOW)
+            os.system("sudo shutdown -h now")
+            print("Shutting down")
+           
+        if pause:
+            #print("Paused")
+            rawCapture.truncate(0)    #Empty the buffer
+            leftCalib = False
+            rightCalib = False
+            thresh_l = 80
+            thresh_r = 80
+            continue
+            
             
         if rightCalib == False or leftCalib == False:
-            GPIO.output(17, GPIO.HIGH)
+            GPIO.output(21, GPIO.HIGH)
             time.sleep(0.001)
-            GPIO.output(17, GPIO.LOW)
+            GPIO.output(21, GPIO.LOW)
     
         small = rescale_img(frame, percent=500)
         gray = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
+    
     
         faces = detector(gray)
     
@@ -233,12 +483,13 @@ for piFrame in camera.capture_continuous(rawCapture, format="bgr", use_video_por
         else:
             faceless = 0
     
-        # if faceless == faceTimer:    #Perform full calibration after not having a face for X frames
-        #     leftCalib = False
-        #     rightCalib = False
-        #     thresh_l = 100
-        #     thresh_r = 100
-        #     print("Recalibrating")
+        if faceless == faceTimer:    #Perform full calibration after not having a face for X frames
+            nofacemode = True
+            faceless = 0
+            try:
+                requests.get("http://" + vlcIp + ":3000/notify/?message=noface", timeout=0.1)
+            except:
+                print("Pause Request Failed!")
     
         for face in faces:
             leftRoi = 0
@@ -249,6 +500,14 @@ for piFrame in camera.capture_continuous(rawCapture, format="bgr", use_video_por
             rightRoi = getRoi([2,3], landmarks)    #1,3 for 5-point landmarks
     
         if faceCount != 0:
+            if nofacemode:
+                print("Found face")
+                nofacemode = False
+                try:
+                    requests.get("http://" + vlcIp + ":3000/notify/?message=facefound", timeout=0.1)
+                except:
+                    print("face Request Failed!")
+                
             oneX, oneY = leftRoi[0]
             twoX, twoY = leftRoi[1]
         
@@ -270,30 +529,66 @@ for piFrame in camera.capture_continuous(rawCapture, format="bgr", use_video_por
             rightRate = getRate([oneX, twoX, oneY, twoY, "right"], thresh_r)
         
             widthDiff = getWDiff()
+        
     
             #print(widthDiff)
     
             currentRate = 50
+            currentVert = 50
     
             
             if leftRate is not None and rightRate is not None and faceCount == 1:
                 currentRate = (leftRate + rightRate) / 2
                 #print("AVG : " + str(currentRate))
+                currentVert = (vertRateR + vertRateL) / 2
             
             elif leftRate is not None and rightRate is None and faceCount == 1:
                 #print("Left : " + str(leftRate))
                 currentRate = leftRate
+                currentVert = vertRateL
             
             elif leftRate is None and rightRate is not None and faceCount == 1:
                 #print("Right : " + str(rightRate))
                 currentRate = rightRate
+                currentVert = vertRateR
             #else:
             #    cv2.rectangle(frame,(int(totalWidth * 0.01), int(totalHeight * 0.01)),(int(totalWidth * 0.99), int(totalHeight * 0.99)),(0,0,255),30)
             #    cv2.line(frame, (int(totalWidth * highLimit), 0), (int(totalWidth * highLimit), totalHeight) , (0, 0,255), 15)
             #    cv2.line(frame, (int(totalWidth * lowLimit), 0), (int(totalWidth * lowLimit), totalHeight) , (0, 0,255), 15)
-      
+            
+            #print triggerV
+            
+            if currentVert > 60 and currentRate < highLimit and currentRate > lowLimit and int(widthDiff) > 85:
+                triggerV += 1
+                triggerR = 0
+                triggerL = 0
+                if triggerV == triggerLim:
+                    GPIO.output(21, GPIO.HIGH)
+                    time.sleep(0.1)
+                    GPIO.output(21, GPIO.LOW)
+                    time.sleep(0.1)
+                    GPIO.output(21, GPIO.HIGH)
+                    time.sleep(0.1)
+                    GPIO.output(21, GPIO.LOW)
+                    time.sleep(0.1)
+                    GPIO.output(21, GPIO.HIGH)
+                    time.sleep(0.1)
+                    GPIO.output(21, GPIO.LOW)
+                    if mode == "channel":
+                        mode = "volume"
+                        try:
+                            requests.get("http://" + vlcIp + ":3000/notify/?message=mode_volume", timeout=0.1)
+                        except: 
+                            print("Notify Request Failed!")
+                    elif mode == "volume":
+                        mode = "channel"
+                        try:
+                            requests.get("http://" + vlcIp + ":3000/notify/?message=mode_channel", timeout=0.1)
+                        except: 
+                            print("Notify Request Failed!")
+                    print(" > Mode = " + mode)
     
-            if currentRate > highLimit and int(widthDiff) > 85:
+            elif currentRate > highLimit and int(widthDiff) > 85:
                 cv2.line(frame, (int(totalWidth * highLimit), 0), (int(totalWidth * highLimit), totalHeight) , (0, 0,255), 15)
                 triggerL += 1
                 triggerR = 0
@@ -302,9 +597,34 @@ for piFrame in camera.capture_continuous(rawCapture, format="bgr", use_video_por
                     cv2.putText(frame, "> LEFT", (30, int(totalHeight * 0.8)), font, 10, (0, 255, 0), 10)
                     cv2.rectangle(frame,(int(totalWidth * 0.01), int(totalHeight * 0.01)),(int(totalWidth * 0.99), int(totalHeight * 0.99)),(0,255,0),30)
                     #playsound('clickOn.mp3')
-                    GPIO.output(17, GPIO.HIGH)
+                    GPIO.output(21, GPIO.HIGH)
                     time.sleep(0.1)
-                    GPIO.output(17, GPIO.LOW)
+                    GPIO.output(21, GPIO.LOW)
+                    if mode == "channel":
+                        try:
+                            requests.get("http://" + vlcPass + "@" + vlcIp + ":8080/requests/status.xml?command=pl_previous", timeout=0.1)
+                        except:
+                            print("VLC Request Failed!")
+                            
+                        try:
+                            requests.get("http://" + vlcIp + ":3000/notify/?message=ChannelDown", timeout=0.1)
+                        except: 
+                            print("Notify Request Failed!")
+                            
+                    elif mode == "volume":
+                        currentVolume -= 25
+                        if currentVolume < 0:
+                            currentVolume = 0
+                        print("Current volume: " + str(currentVolume))
+                        try:
+                            requests.get("http://" + vlcPass + "@" + vlcIp + ":8080/requests/status.xml?command=volume&val=" + str(currentVolume), timeout=0.1)
+                        except:
+                            print("VLC Request Failed!")
+                            
+                        try:
+                            requests.get("http://" + vlcIp + ":3000/notify/?message=Volume_" + str(currentVolume), timeout=0.1)
+                        except: 
+                            print("Notify Request Failed!")
     
             elif currentRate < lowLimit and int(widthDiff) > 85:
                 cv2.line(frame, (int(totalWidth * lowLimit), 0), (int(totalWidth * lowLimit), totalHeight) , (0, 0,255), 15)
@@ -315,16 +635,41 @@ for piFrame in camera.capture_continuous(rawCapture, format="bgr", use_video_por
                     cv2.putText(frame, "> RIGHT", (30, int(totalHeight * 0.8)), font, 10, (0, 255, 0), 10)
                     cv2.rectangle(frame,(int(totalWidth * 0.01), int(totalHeight * 0.01)),(int(totalWidth * 0.99), int(totalHeight * 0.99)),(0,255,0),30)
                     #playsound('clickOff.mp3')
-                    GPIO.output(17, GPIO.HIGH)
+                    GPIO.output(21, GPIO.HIGH)
                     time.sleep(0.1)
-                    GPIO.output(17, GPIO.LOW)
+                    GPIO.output(21, GPIO.LOW)
                     time.sleep(0.1)
-                    GPIO.output(17, GPIO.HIGH)
+                    GPIO.output(21, GPIO.HIGH)
                     time.sleep(0.1)
-                    GPIO.output(17, GPIO.LOW)
+                    GPIO.output(21, GPIO.LOW)
+                    if mode == "channel":
+                        try:
+                            requests.get("http://" + vlcPass + "@" + vlcIp + ":8080/requests/status.xml?command=pl_next", timeout=0.3)
+                        except:
+                            print("VLC Request Failed!")
+                            
+                        try:
+                            requests.get("http://" + vlcIp + ":3000/notify/?message=ChannelUp", timeout=0.3)
+                        except: 
+                            print("Notify Request Failed!")
+                    elif mode == "volume":
+                        currentVolume += 25
+                        if currentVolume >= 249:
+                            currentVolume = 255 
+                        print("Current volume: " + str(currentVolume))
+                        try:
+                            requests.get("http://" + vlcPass + "@" + vlcIp + ":8080/requests/status.xml?command=volume&val=" + str(currentVolume), timeout=0.3)
+                        except:
+                            print("VLC Request Failed!")
+                            
+                        try:
+                            requests.get("http://" + vlcIp + ":3000/notify/?message=Volume_" + str(currentVolume), timeout=0.3)
+                        except: 
+                            print("Notify Request Failed!")
             else: 
                 triggerL = 0
                 triggerR = 0
+                triggerV = 0
     
             if leftCalib == False and rightCalib == False:
                 cv2.putText(frame, "Calibrating...", (30, int(totalHeight * 0.9)), font, (textSize * 2), (0, 255, 0), 3)
@@ -357,7 +702,7 @@ for piFrame in camera.capture_continuous(rawCapture, format="bgr", use_video_por
             #cv2.imshow("Roi", roi)
     
         else:
-            print("No faces")
+            #print("No faces")
             cv2.line(frame, (int(totalWidth * lowLimit), 0), (int(totalWidth * lowLimit), totalHeight) , (0, 255,255), 2)
             cv2.line(frame, (int(totalWidth * highLimit), 0), (int(totalWidth * highLimit), totalHeight) , (0, 255,255), 2)
             cv2.line(frame, (0, int(totalHeight * 0.6)), (totalWidth,int(totalHeight * 0.6)) , (0, 0,255), 2)
@@ -366,6 +711,7 @@ for piFrame in camera.capture_continuous(rawCapture, format="bgr", use_video_por
     
         key = cv2.waitKey(30)
         if key == 27:
+            hookman.start()
             break
         elif key == 38:
             print("+1 threshR")
@@ -389,6 +735,6 @@ for piFrame in camera.capture_continuous(rawCapture, format="bgr", use_video_por
         
     except:
         print("Error converting image")
-        rawCapture.truncate(0)    #Empty the buffer on error
+        rawCapture.truncate(0)    #Empty the buffer
 
-cv2.destroyAllWindows()d
+cv2.destroyAllWindows()
