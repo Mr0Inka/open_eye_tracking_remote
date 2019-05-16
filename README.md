@@ -32,3 +32,8 @@ Set up the notifier / Player:
 Important notes: 
 - The RPI version is optimized for python2, while the windows version works only with python3 (float calculation)
 - A NOIR camera with additional IR blasters improves the detection quality by a lot
+
+
+
+
+Icon by Gregor Cresnar
